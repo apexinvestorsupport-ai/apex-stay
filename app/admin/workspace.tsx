@@ -59,8 +59,27 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, options);
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = typeof result.error === "string" ? result.error : "The request could not be completed.";
-    throw new Error(message);
+    const error = result && typeof result === "object" && "error" in result
+      ? result.error
+      : undefined;
+    if (typeof error === "string") throw new Error(error);
+    if (error && typeof error === "object" && "fieldErrors" in error) {
+      const fieldErrors = error.fieldErrors;
+      if (fieldErrors && typeof fieldErrors === "object") {
+        const details = Object.entries(fieldErrors as Record<string, unknown>)
+          .flatMap(([field, messages]) =>
+            Array.isArray(messages)
+              ? messages.filter((message: unknown): message is string => typeof message === "string").map((message: string) => `${field}: ${message}`)
+              : [],
+          );
+        if (details.length) throw new Error(`Please correct the following: ${details.join("; ")}`);
+      }
+      if ("formErrors" in error && Array.isArray(error.formErrors)) {
+        const details = error.formErrors.filter((message: unknown): message is string => typeof message === "string");
+        if (details.length) throw new Error(details.join("; "));
+      }
+    }
+    throw new Error("The request could not be completed. Check the form details and try again.");
   }
   return result as T;
 }
